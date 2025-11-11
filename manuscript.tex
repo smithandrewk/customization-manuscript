@@ -10,6 +10,44 @@
 \usepackage{lineno}
 \usepackage{xcolor}
 \linenumbers
+% -------------------------------------------------
+% 1. Packages (load shapes.callouts UNCONDITIONALLY)
+% -------------------------------------------------
+\usepackage{xcolor}          % for coloured text
+\usepackage{soul}            % for \hl (highlight) -- optional, can remove if unused
+\usepackage{tikz}            % for the bubble
+\usetikzlibrary{shapes.callouts,calc}  % <- MOVED HERE: always load these
+
+% -------------------------------------------------
+% 2. Draft switch
+% -------------------------------------------------
+\newif\ifdraft
+\drafttrue   % <-- uncomment for a draft with visible comments
+% \draftfalse   % <-- default: final version (comments hidden)
+
+% -------------------------------------------------
+% 3. The \cmt command (definition is conditional)
+% -------------------------------------------------
+\ifdraft
+  % ---- DRAFT version (visible bubble) -----------------
+  \definecolor{cmtcolor}{rgb}{1,0.8,0.8}   % light red background
+  \newcommand{\cmt}[2][]{%   % #1 = optional initials, #2 = text
+    \tikz[baseline,remember picture]{
+      \node[rectangle callout,
+            fill=cmtcolor,
+            draw=red!60!black,
+            rounded corners=2pt,
+            inner sep=3pt,
+            callout relative pointer={(-0.4,0.6)},
+            font=\scriptsize\sffamily,
+            text width=3.5cm] (cmt) 
+            {#2\ifx\relax#1\relax\else~\footnotesize(#1)\fi};
+    }%
+  }
+\else
+  % ---- FINAL version (completely invisible) ----------
+  \newcommand{\cmt}[2][]{}   % gobble everything
+\fi
 
 
 \newcommand{\nParticipants}{17}
@@ -123,12 +161,13 @@ Population-trained models that analyze smoking gesture data from others to ident
 The fundamental bottleneck lies in data collection. Acquiring labeled smoking events from individuals requires ecological momentary assessment (EMA), where users manually annotate their behavior throughout the day. High labeling burden required for frequent behaviors like smoking can reduce compliance and introduce annotation fatigue, limiting the feasibility of collecting the hundreds or thousands of labeled examples typically required to train deep learning models from scratch. This creates a paradox: personalized models are necessary for accurate detection, yet the data requirements for personalization impose prohibitive burden on participants.
 
 Transfer learning offers a potential solution by leveraging knowledge from population-level models to accelerate individual adaptation. We demonstrate that fine-tuning pre-trained population models with minimal individual data—as little as \fivePctDataHours~hours per participant (5\% of average wear time)—achieves robust personalization. We compare transfer learning against training models from scratch on individual data, showing that fine-tuning achieves comparable performance with \dataEfficiencyFold-fold reduction in required labeled data. Through leave-one-participant-out cross-validation on \nParticipants~participants, we establish a practical pathway for deploying personalized smoking detection systems that balance accuracy with feasible data collection requirements. Retraining population models to include each new individual is computationally prohibitive for large-scale deployment, making our transfer learning approach essential for scalable personalized intervention systems.
-
+\cmt[Thrasher]{I like this emphasis in the introduction, but I think that it would be even stronger if prior research on smartwatches was reviewed and cited to support this being a contribution. I think we should also think about other contributions we are making, such as doing this with commercially available devices and doing the training in the real world, not the lab.}
 \section{Methods}
 
 \subsection{Data Collection and Processing}
 
 \textbf{Participants and Recruitment:} \nParticipants~adult daily smokers were recruited from an ongoing smoking behavior research study. Participants were required to be current daily cigarette smokers (smoking at least 5 cigarettes per day) and willing to wear a smartwatch during waking hours for \collectionPeriodDays~days. All participants provided informed consent and completed the \collectionPeriodDays-day data collection protocol. Specific demographic characteristics are summarized at the cohort level to protect participant privacy.
+\cmt[Thrasher]{I was surprised that the description discussed a 14 day period for wearing the device.  Didn't we do it for 7 days at a time with different bouts of data collection?} 
 
 \textbf{Data Collection Protocol:} Participants wore TicWatch smartwatches with 3-axis accelerometers and gyroscopes sampling at 50 Hz during waking hours for \collectionPeriodDays~days in naturalistic settings where they normally smoked. Custom software autonomously recorded motion data throughout wear periods. Participants self-reported smoking events in real-time by pressing a button on the watch interface when beginning and ending each cigarette, creating timestamped annotations of smoking bouts. Participants were instructed to wear the watch on their dominant wrist during all waking hours, charge the device nightly, and continue their normal smoking routines without modification. No ecological momentary assessments or smoking behavior prompts were administered beyond the self-initiated event annotations.
 
@@ -144,7 +183,7 @@ The first block transformed the 6-channel input to \baseChannels~feature channel
 
 \subsection{Training Procedures}
 
-\textbf{Base Model Training:} For each LOPO fold, base models were trained on the \nNonTargetParticipants~non-target participants using their training and validation sets for model updates, while their test sets were pooled to form a base validation set for early stopping and hyperparameter selection. We used binary cross-entropy loss without positive class weighting, the AdamW optimizer with learning rate 3×10$^{-4}$, and batch size 32. Training incorporated data augmentation (Gaussian jitter with $\sigma$=0.005, magnitude scaling [0.98, 1.02], applied with probability 0.3) to improve robustness. Models were trained with early stopping on base validation F1 score (patience: 50 epochs). Random seeds controlled weight initialization to ensure reproducibility.
+\textbf{Base Model Training:} For each cross validation fold, base models were trained on the \nNonTargetParticipants~non-target participants using their training and validation sets for model updates, while their test sets were pooled to form a base validation set for early stopping and hyperparameter selection. We used binary cross-entropy loss without positive class weighting, the AdamW optimizer with learning rate 3×10$^{-4}$, and batch size 32. Training incorporated data augmentation (Gaussian jitter with $\sigma$=0.005, magnitude scaling [0.98, 1.02], applied with probability 0.3) to improve robustness. Models were trained with early stopping on base validation F1 score (patience: 50 epochs). Random seeds controlled weight initialization to ensure reproducibility.
 
 \textbf{Fine-Tuning:} Base models were adapted to target participants by continuing training exclusively on target participant training data, with the target validation set used for early stopping. All network parameters were unfrozen and updated using the same optimizer and learning rate (3×10$^{-4}$) as base training. To address class imbalance in target data, we applied binary cross-entropy loss with positive class weight 1.0. Early stopping used target validation F1 score with extended patience (200 epochs) to allow thorough adaptation. Fine-tuning employed a separate random seed (\texttt{seed\_finetune}) independent of the base model seed, enabling multiple fine-tuning runs from the same pretrained base model to assess fine-tuning variance.
 
@@ -185,12 +224,12 @@ t-SNE dimensionality reduction mapped these features to 2D space using standard 
 \section{Results}
 \subsection{Dataset Description}
 
-\nParticipants~participants provided wrist-worn accelerometer and gyroscope data during real-world smoking behavior over \collectionPeriodDays-day collection periods. A total of 1652.8 hours of continuous time series data were collected (mean: \meanWearTimeHours~hours per participant), organized into an average of 25.3 wear sessions per participant (mean session duration: 5.02 hours). Participants recorded 825 smoking bouts across all sessions (mean: 2.51 bouts per session), with 81.2\% of sessions containing at least one smoking event. Total smoking duration was 104.7 hours (mean bout duration: 390.9 seconds).
+\nParticipants~participants provided wrist-worn accelerometer and gyroscope data during real-world smoking behavior over \collectionPeriodDays-day collection periods. A total of 1652.8 hours of continuous time series data were collected (mean: \meanWearTimeHours~hours per participant), organized into an average of 25.3 wear sessions per participant (mean \cmt[Thrasher]{report median instead?  Is this relatively low number of hours due to lack of charge?} session duration: 5.02 hours). Participants recorded 825 smoking bouts across all sessions (mean: 2.51 bouts per session), with 81.2\% of sessions containing at least one smoking event. Total smoking duration was 104.7 hours (mean bout duration: 390.9 seconds).
 
 After windowing the continuous time series into 60-second non-overlapping segments (3000 samples per window at 50 Hz), the dataset comprised \totalWindows~windows across all participants (mean: \windowsPerParticipant~windows per participant). The positive class (smoking) constituted \positiveClassPercentage\% of all windows, reflecting the class imbalance typical of episodic behavioral detection tasks. For LOPO cross-validation, each fold's training set contained approximately \trainWindows~windows from \nNonTargetParticipants~participants, while test sets contained approximately \testWindows~windows from the held-out participant.
 
 \subsection{Population Models Exhibit Poor Generalization to Individuals}
-Base models trained on \nNonTargetParticipants~participants and evaluated on the held-out participant showed substantial performance variability across individuals (Figure \ref{fig:base_test}A-B). We evaluate models using F1 score (harmonic mean of precision and recall), which balances detection accuracy (precision: fraction of detected smoking that is correct) with detection completeness (recall: fraction of true smoking detected). Mean F1 score for base models was \baseFoneMean~$\pm$~\baseFoneStd, with individual participant performance ranging from \baseFoneMin~to~\baseFoneMax. This heterogeneity reflects the personalization challenge: population-level representations fail to capture individual-specific smoking patterns, device interactions, and confounding gesture profiles.
+Base models trained on \nNonTargetParticipants~participants and evaluated on the held-out participant showed substantial performance variability across individuals (Figure \ref{fig:base_test}A-B). We evaluate models using F1 score (harmonic mean of precision and recall), which balances detection accuracy (precision: fraction of detected smoking that is correct) with detection completeness (recall: fraction of true smoking detected). Mean F1 score for base models was \baseFoneMean~$\pm$~\baseFoneStd, with individual participant performance ranging from \baseFoneMin~to~\baseFoneMax. This heterogeneity reflects the personalization challenge: population-level representations fail to capture individual-specific smoking patterns, device interactions, and discriminate smoking gestures from confounding gesture profiles.
 
 Cross-participant performance variation was particularly pronounced for participants exhibiting distinct smoking styles or hand dominance patterns (Table \ref{tab:performance}). Fold 3 showed the largest generalization gap (base F1 = 0.43), suggesting their smoking gestures deviated substantially from population norms. Conversely, folds 2, 4, and 11 achieved relatively stronger base performance (F1 $\geq$ 0.96), indicating greater similarity to the training distribution. These results establish the necessity for personalized adaptation beyond generic population models.
 
@@ -266,7 +305,7 @@ While the performance gap with full data is modest, this comparison establishes 
 \end{figure}
 
 \subsection{Transfer Learning Excels in Low-Data Regimes}
-
+\cmt[Thrasher]{I see your point in doing this, but I do wonder if we should be using metrics that consider the number of smoking sessions captured rather than the \% of time.}
 The critical advantage of transfer learning emerges when individual data is limited. We systematically evaluated both approaches across data-scarce regimes by training models with 1\%, 5\%, 10\%, 25\%, 50\%, and 100\% of each participant's data (Figure \ref{fig:low_data_comparison}). The results reveal a dramatic divergence in data efficiency between methods.
 
 At the most extreme data scarcity (1\% of target data, approximately \onePctDataHours~hours per participant), the superiority of transfer learning is most pronounced. Target-only models trained from scratch collapsed to median F1 of \onePctTargetOnlyMedian, barely exceeding chance performance and exhibiting high variance across participants. In stark contrast, fine-tuned models maintained robust performance with median F1 of \onePctFinetuneMedian, demonstrating an absolute improvement of \onePctAbsoluteImprovement~F1 points over target-only training. This improvement at 1\% data is nearly twice the magnitude of the mean improvement from base to fine-tuned models at full data (\absoluteImprovementMean), underscoring the critical value of population-pretrained representations when individual labels are extremely scarce. Remarkably, fine-tuning with just 1\% of target data retains \onePctRetentionPct\% of the performance achieved with 100\% of target data, while target-only training at 1\% achieves only \onePctTargetOnlyRetentionPct\% of its full-data performance—a \onePctRetentionDifference~percentage point difference in retention. At this extreme, fine-tuned models with 1\% data approach the performance of base population models (median \onePctFinetuneMedian~vs. mean \baseFoneMean), demonstrating that minimal individual data is sufficient to match or exceed generic population models.
@@ -297,19 +336,20 @@ This dual organization—shared smoking semantics with individual-specific organ
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figure5.pdf}
-    \caption{\textbf{Feature space visualization reveals dual structure of learned representations.} t-SNE projection of features extracted from a representative fine-tuned model applied to all participants' test sets. (A) Features colored by smoking label show clear separation between smoking and non-smoking windows, demonstrating that the model learned generalizable smoking patterns. (B) Features colored by participant reveal individual-specific clustering, illustrating inter-participant variability in feature space. This dual structure—shared smoking representations with participant-specific organization—explains why population pretraining provides useful initialization while personalization remains necessary for robust individual performance. Each point represents a 60-second window from held-out test data.}
+    \caption{\textbf{Feature space visualization reveals dual structure of learned representations.} t-SNE projection of features extracted from a representative fine-tuned model applied to all participants' test sets. (A) \cmt[Thrasher]{I am not sure that I see this, but perhaps it is partly because the label on the figure overlaps with the data that are most relevant, in the upper right hand corner. Where grey and red dots are close together, does that mean that they are not detected?}Features colored by smoking label show clear separation between smoking and non-smoking windows, demonstrating that the model learned generalizable smoking patterns. (B) \cmt[Thrasher]{a lot of participants and color shading to try to distinguish here.  I appreciate the concept, but i do wonder if you can also think of the different clusters that include multiple colors as indicating similarities across individuals, too.} Features colored by participant reveal individual-specific clustering, illustrating inter-participant variability in feature space. This dual structure—shared smoking representations with participant-specific organization—explains why population pretraining provides useful initialization while personalization remains necessary for robust individual performance. Each point represents a 60-second window from held-out test data.}
     \label{fig:tsne}
 \end{figure}
 
 \section{Discussion}
 
-We demonstrate that transfer learning resolves the fundamental tension between personalization accuracy and data collection burden in wearable behavioral sensing. By fine-tuning population-pretrained models with minimal individual data, we achieve robust personalized smoking detection with as little as \onePctDataHours~hours (1\% of target data) of user data, where fine-tuning maintains median F1 of \onePctFinetuneMedian~while target-only training collapses to \onePctTargetOnlyMedian. This approach delivers mean F1 scores of \finetuneFoneMean~across \nParticipants~participants, substantially outperforming both population-only models (\baseFoneMean) and data-matched individual models in low-data regimes.
 
+We demonstrate that transfer learning resolves the fundamental tension between personalization accuracy and data collection burden in wearable behavioral sensing. By fine-tuning population-pretrained models with minimal individual data, we achieve robust personalized smoking detection with as little as \onePctDataHours~hours (1\% of target data) \cmt[Thrasher]{Again, i would not want to make this point too strongly.  and it is important to consider whether there is a smoking session in that 1\%.  Are we really saying that integrating a single cigarette smoking session is enough?  My hunch is that we should be talking about the number of sessions rather than the amount of time and that there should be more than one.} of user data, where fine-tuning maintains median F1 of \onePctFinetuneMedian~while target-only training collapses to \onePctTargetOnlyMedian. This approach delivers mean F1 scores of \finetuneFoneMean~across \nParticipants~participants, substantially outperforming both population-only models (\baseFoneMean) and data-matched individual models in low-data regimes.
 \subsection{Implications for Deployment}
 
 The practical implications for real-world intervention systems are substantial. Traditional personalization approaches require extensive per-user data collection that creates deployment barriers: users must label hundreds or thousands of behavioral instances, introducing annotation fatigue and reducing compliance. Our transfer learning approach reduces this burden dramatically, requiring only hours rather than weeks of labeled data per individual. This makes personalized wearable interventions feasible at scale.
 
 Most remarkably, our results demonstrate that even at the extreme of 1\% individual data (approximately \onePctDataHours~hours of wear time), fine-tuning achieves median F1 of \onePctFinetuneMedian—representing \onePctRetentionPct\% of the performance obtained with full individual data collection. This represents a practical breakthrough: users can achieve highly functional personalized detection after wearing the device for barely more than one hour, rather than \collectionPeriodWeeks~weeks. The absolute improvement of \onePctAbsoluteImprovement~F1 points over target-only training at this extreme data scarcity underscores the critical value of population pretraining. For rapid deployment scenarios, pilot studies, or populations where sustained data collection is challenging, the 1\% regime provides a viable path to personalization that was previously infeasible. At 5\% data ($\sim$\fivePctDataHours~hours), performance increases further, providing deployment flexibility based on the accuracy-burden tradeoff appropriate for each use case.
+\cmt[Thrasher]{These are nice stats to share, but I still wonder if we should be talking about how it may still be important to identify individuals who benefit more from longer periods of time.  Can we present data on that?  That would seem to be an important component of the next section, though I do not see any efforts to try to see if the number of hours you need to wear it to improve accuracy may also need to be personalized.}
 
 The computational efficiency of our approach is equally critical for deployment. Retraining population models to incorporate each new user is prohibitively expensive and scales poorly. In contrast, fine-tuning freezes the population model and adapts only to individual data, enabling parallel personalization across thousands of users with minimal computational overhead. Base models can be trained once on population data and cached, then rapidly fine-tuned for each new user on-device or in the cloud.
 
@@ -329,11 +369,11 @@ Domain adaptation techniques could theoretically reduce the need for individual 
 
 \subsection{Limitations and Future Directions}
 
-Several limitations warrant consideration. Our study evaluated \nParticipants~participants over \collectionPeriodDays-day periods—larger cohorts with longer monitoring would strengthen generalizability claims. The self-reported smoking annotations, while practical, may contain labeling errors or temporal misalignments. Button-press timing may not perfectly align with actual smoking bout boundaries, introducing noise into training labels. Future work could explore alternative labeling strategies or semi-supervised methods that leverage unlabeled data.
+Several limitations warrant consideration. Our study evaluated \nParticipants~participants over \collectionPeriodDays-day periods—larger cohorts with longer monitoring would strengthen generalizability claims. \cmt[Thrasher]{not sure i agree with this given the data that you share about the \% of time needed.  Was there anyone for whom longer periods were definitely needed?} The self-reported smoking annotations, while practical, may contain labeling errors or temporal misalignments. Button-press timing may not perfectly align with actual smoking bout boundaries, introducing noise into training labels. Future work could explore alternative labeling strategies or semi-supervised methods that leverage unlabeled data.
 
-Our models were trained and evaluated on wrist-worn accelerometer and gyroscope data from a specific device. Generalization across different wearable form factors (arm bands, chest straps, rings) and sensor modalities remains to be established. Cross-device transfer learning could extend our approach to heterogeneous wearable ecosystems.
+Our models were trained and evaluated on wrist-worn accelerometer and gyroscope data from a specific, commercially available device (TicWatch), which aimed to enhance future scalability of our approach.  Nevertheless, generalization across different wearable form factors (arm bands, chest straps, rings) and sensor modalities remains to be established. Cross-device transfer learning could extend our approach to heterogeneous wearable ecosystems.
 
-The optimal amount of individual data required for personalization likely varies across users. Some individuals may achieve strong performance with less than \fivePctDataHours~hours of data, while others may benefit from additional examples. Adaptive data collection strategies that dynamically determine when sufficient personalization has been achieved could further reduce burden.
+The optimal amount of individual data required for personalization likely varies across users. \cmt[Thrasher]{Yes - and can't we provide a bit of information about this?} Some individuals may achieve strong performance with less than \fivePctDataHours~hours of data, while others may benefit from additional examples. Adaptive data collection strategies that dynamically determine when sufficient personalization has been achieved could further reduce burden.
 
 We evaluated smoking detection specifically, but the underlying challenge—personalized behavioral sensing with limited individual data—spans many applications. Transfer learning for personalized activity recognition, dietary monitoring, medication adherence tracking, and other health behaviors represents important future directions. The data efficiency gains demonstrated here should generalize to these domains, though empirical validation is necessary.
 
